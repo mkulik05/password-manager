@@ -79,6 +79,9 @@ async fn launch() {
                     println!("{i}. {key}");
                     i += 1;
                 }
+                if i == 1 {
+                    println!("No saved passwords yet.\nYou can add them using `add` command");
+                }
             }
             "exit" => {
                 break;

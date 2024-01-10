@@ -8,7 +8,7 @@ use toml::de::Error;
 static CONFIG_PATH: &str = ".local/pwd-manager.toml";
 
 #[cfg(target_os = "windows")]
-static CONFIG_PATH: &str = "~\\AppData\\Local\\pwd-manager.toml";
+static CONFIG_PATH: &str = "AppData\\Local\\pwd-manager.toml";
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -63,7 +63,7 @@ impl Config {
     async fn regen_config(&mut self) {
         let path = loop {
             let user_input = input_string("Input path to password storage file: ").await;
-            let path = Path::new(&user_input);
+            let path = Path::new(user_input.trim());
             let Some(dir_path) = path.parent() else {
                 continue;
             };
