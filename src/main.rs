@@ -92,38 +92,31 @@ async fn launch() {
                     if pwds.contains_key(&n) {
                         println!("Such password name already exists");
                     } else {
-                        break n;
+                        if !n.is_empty(){break n}
                     }
                 };
                 let password = rpassword::prompt_password("Password: ").unwrap();
-                pwds.insert(name, password);
+                pwds.insert(name.clone(), password);
                 let mut pwds_str = serde_json::to_string(&pwds).expect("Failed to se passwords somehow");
                 let data = mc.encrypt_str_to_base64(&pwds_str);
                 if let Err(e) = storage.save_pwds(&data).await {
-                    eprint!("Failed to save passwords: {:?}", e);
+                    eprintln!("Failed to save passwords: {:?}", e);
+                    let mut not_saved_pwd = pwds.remove(&name);
+                    not_saved_pwd.zeroize();
                 } else {
                     println!("Updated passwords")
                 };
                 pwds_str.zeroize();
             }
             "get" => {
-                let key = loop {
-                    let n = console_ui::input_string("Pwd name: ")
-                        .await
-                        .trim()
-                        .to_string();
-                    if !pwds.contains_key(&n) {
-                        println!("No such password name");
-                    } else {
-                        break n;
-                    }
-                };
+                let key = get_existing_key(&pwds).await;
                 let pwd = pwds.get(&key).expect("We checked such key exists");
                 let displ_option = console_ui::input_string("Select display option (enter for default):\n  1. Show, hide after enter click\n  2. Copy\n>>> ").await.trim().to_string();
                 if displ_option == "1" {
                     print!("{pwd}");
                     std::io::stdout().flush().unwrap();
                     let _ = console_ui::input_string("").await;
+                    // dark magic called ascii escapes
                     println!("\x1b[1;A{}", " ".repeat(pwd.len()));
                     std::io::stdout().flush().unwrap();
                 } else {
@@ -133,14 +126,29 @@ async fn launch() {
                     // it doesn't work without sleep
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 }
+            },
+            "del" => {
+                let key = get_existing_key(&pwds).await;
+                let mut pwd_backup = pwds.remove(&key).expect("We checked that key exists");
+                let mut pwds_str = serde_json::to_string(&pwds).expect("Failed to se passwords somehow");
+                let data = mc.encrypt_str_to_base64(&pwds_str);
+                if let Err(e) = storage.save_pwds(&data).await {
+                    eprintln!("Failed to save passwords: {:?}", e);
+                    pwds.insert(key, pwd_backup);
+                } else {
+                    println!("Updated passwords");
+                    pwd_backup.zeroize();
+                };
+                pwds_str.zeroize();
             }
             _ => {
                 println!(
                     "Usage:
-    `list` - list all resources for which you have saved password
-    `add`  - add new password
-    `get`  - select password, copy it to clipboard
-    `exit` - sync and exit"
+    `ls`   - list all resources for which you have saved password
+    `add`    - add new password
+    `get`    - select password, copy it to clipboard
+    `del` - delete selected password
+    `exit`   - sync and exit"
                 )
             }
         }
@@ -148,5 +156,19 @@ async fn launch() {
     for (mut key, mut pwd) in pwds {
         key.zeroize();
         pwd.zeroize();
+    }
+}
+
+async fn get_existing_key(pwds: &Pwds) -> String {
+    loop {
+        let n = console_ui::input_string("Pwd name: ")
+            .await
+            .trim()
+            .to_string();
+        if !pwds.contains_key(&n) {
+            println!("No such password name");
+        } else {
+            break n;
+        }
     }
 }
