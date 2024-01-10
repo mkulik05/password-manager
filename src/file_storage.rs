@@ -1,6 +1,6 @@
 pub struct FileStorage {
     pub file_path: String,
-    pub pwd: String
+    pub pwd: String,
 }
 impl FileStorage {
     pub async fn load_pwds(&self) -> std::io::Result<String> {

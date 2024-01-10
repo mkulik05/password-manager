@@ -15,20 +15,31 @@ type Pwds = HashMap<String, String>;
 
 #[tokio::main]
 async fn main() {
-    let password = console_ui::input_string("Master password: ").await;
+    launch().await;
+}
+
+#[async_recursion::async_recursion]
+async fn launch() {
+    let password = rpassword::prompt_password("Master password: ").unwrap();
     let storage = FileStorage {
         file_path: Config::get_storage_path().await.pwd_file_path,
         pwd: password,
     };
     let mc = new_magic_crypt!(&storage.pwd, 256);
     let loaded_pwds_str_res = storage.load_pwds().await;
-    let mut pwds_update = false;
     let mut pwds: Pwds = {
         match loaded_pwds_str_res {
             Ok(pwds_str) => {
-                let mut decrypred = mc
-                    .decrypt_base64_to_string(pwds_str)
-                    .expect("Password storage is damaged, not possible to decrypt");
+                let mut decrypred = {
+                    match mc.decrypt_base64_to_string(pwds_str) {
+                        Ok(decr) => decr,
+                        Err(_e) => {
+                            eprintln!("Wrong password/password storage is damaged");
+                            launch().await;
+                            return;
+                        }
+                    }
+                };
                 let pwds_res: serde_json::Result<Pwds> = serde_json::from_str(&decrypred);
                 decrypred.zeroize();
                 match pwds_res {
@@ -64,7 +75,7 @@ async fn main() {
         match input.as_str().trim() {
             "list" => {
                 let mut i = 1;
-                for key  in pwds.keys() {
+                for key in pwds.keys() {
                     println!("{i}. {key}");
                     i += 1;
                 }
@@ -86,7 +97,14 @@ async fn main() {
                 };
                 let password = rpassword::prompt_password("Password: ").unwrap();
                 pwds.insert(name, password);
-                pwds_update = true;
+                let mut pwds_str = serde_json::to_string(&pwds).expect("Failed to se passwords somehow");
+                let data = mc.encrypt_str_to_base64(&pwds_str);
+                if let Err(e) = storage.save_pwds(&data).await {
+                    eprint!("Failed to save passwords: {:?}", e);
+                } else {
+                    println!("Updated passwords")
+                };
+                pwds_str.zeroize();
             }
             "get" => {
                 let key = loop {
@@ -101,10 +119,20 @@ async fn main() {
                     }
                 };
                 let pwd = pwds.get(&key).expect("We checked such key exists");
-                let mut ctx = ClipboardContext::new().expect("Can't access clipboard");
-                ctx.set_contents(pwd.to_owned()).unwrap();
-                println!("Password was copied to clipboard");
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                let displ_option = console_ui::input_string("Select display option (enter for default):\n  1. Show, hide after enter click\n  2. Copy\n>>> ").await.trim().to_string();
+                if displ_option == "1" {
+                    print!("{pwd}");
+                    std::io::stdout().flush().unwrap();
+                    let _ = console_ui::input_string("").await;
+                    println!("\x1b[1;A{}", " ".repeat(pwd.len()));
+                    std::io::stdout().flush().unwrap();
+                } else {
+                    let mut ctx = ClipboardContext::new().expect("Can't access clipboard");
+                    ctx.set_contents(pwd.to_owned()).unwrap();
+                    println!("Password was copied to clipboard");
+                    // it doesn't work without sleep
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
             }
             _ => {
                 println!(
@@ -116,15 +144,6 @@ async fn main() {
                 )
             }
         }
-    }
-    if pwds_update {
-        let mut pwds =
-            serde_json::to_string(&pwds).expect("Failed to se passwords somehow");
-        let data = mc.encrypt_str_to_base64(&pwds);
-        if let Err(e) = storage.save_pwds(&data).await {
-            eprint!("Failed to save passwords: {:?}", e);
-        };
-        pwds.zeroize();
     }
     for (mut key, mut pwd) in pwds {
         key.zeroize();
