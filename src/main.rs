@@ -144,10 +144,10 @@ async fn launch() {
             _ => {
                 println!(
                     "Usage:
-    `ls`   - list all resources for which you have saved password
+    `list`   - list all resources for which you have saved password
     `add`    - add new password
     `get`    - select password, copy it to clipboard
-    `del` - delete selected password
+    `del`    - delete selected password
     `exit`   - sync and exit"
                 )
             }
